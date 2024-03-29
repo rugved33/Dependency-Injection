@@ -17,11 +17,11 @@ namespace DependencyInjection
     [DefaultExecutionOrder(-1000)]
     public class Injector : MonoBehaviour
     {
-        const BindingFlags k_bindingFlags = BindingFlags.Instance | BindingFlags.Public | BindingFlags.NonPublic;
+        private const BindingFlags k_bindingFlags = BindingFlags.Instance | BindingFlags.Public | BindingFlags.NonPublic;
 
-        readonly Dictionary<Type, object> registry = new();
+        private readonly Dictionary<Type, object> registry = new();
 
-        void Awake()
+        private void Awake()
         {
             var monoBehaviours = FindMonoBehaviours();
 
@@ -46,7 +46,7 @@ namespace DependencyInjection
             registry[typeof(T)] = instance;
         }
 
-        void Inject(object instance)
+        private void Inject(object instance)
         {
             var type = instance.GetType();
 
@@ -105,7 +105,7 @@ namespace DependencyInjection
             }
         }
 
-        void Register(IDependencyProvider provider)
+        private void Register(IDependencyProvider provider)
         {
             var methods = provider.GetType().GetMethods(k_bindingFlags);
 
@@ -154,7 +154,7 @@ namespace DependencyInjection
             }
         }
 
-        HashSet<Type> GetProvidedDependencies(IEnumerable<IDependencyProvider> providers)
+        private HashSet<Type> GetProvidedDependencies(IEnumerable<IDependencyProvider> providers)
         {
             var providedDependencies = new HashSet<Type>();
             foreach (var provider in providers)
@@ -190,18 +190,18 @@ namespace DependencyInjection
             Debug.Log("[Injector] All injectable fields cleared.");
         }
 
-        object Resolve(Type type)
+        private object Resolve(Type type)
         {
             registry.TryGetValue(type, out var resolvedInstance);
             return resolvedInstance;
         }
 
-        static MonoBehaviour[] FindMonoBehaviours()
+        private static MonoBehaviour[] FindMonoBehaviours()
         {
             return FindObjectsByType<MonoBehaviour>(FindObjectsSortMode.InstanceID);
         }
 
-        static bool IsInjectable(MonoBehaviour obj)
+        private static bool IsInjectable(MonoBehaviour obj)
         {
             var members = obj.GetType().GetMembers(k_bindingFlags);
             return members.Any(member => Attribute.IsDefined(member, typeof(InjectAttribute)));
