@@ -18,8 +18,8 @@ namespace DependencyInjection
     public class Injector : MonoBehaviour
     {
         private const BindingFlags k_bindingFlags = BindingFlags.Instance | BindingFlags.Public | BindingFlags.NonPublic;
-
         private readonly Dictionary<Type, object> registry = new();
+        private readonly Dictionary<Type, MemberInfo[]> injectableMembersCache = new();
 
         private void Awake()
         {
@@ -49,59 +49,43 @@ namespace DependencyInjection
         private void Inject(object instance)
         {
             var type = instance.GetType();
+            var injectableMembers = GetInjectableMembers(type);
 
             // Inject into fields
-            var injectableFields = type.GetFields(k_bindingFlags)
-                .Where(member => Attribute.IsDefined(member, typeof(InjectAttribute)));
-
-            foreach (var injectableField in injectableFields)
+            foreach (var member in injectableMembers)
             {
-                if (injectableField.GetValue(instance) != null)
+                if (member is FieldInfo field)
                 {
-                    Debug.LogWarning($"[Injector] Field '{injectableField.Name}' of class '{type.Name}' is already set.");
-                    continue;
+                    if (field.GetValue(instance) != null)
+                    {
+                        Debug.LogWarning($"[Injector] Field '{field.Name}' of class '{type.Name}' is already set.");
+                        continue;
+                    }
+                    var resolvedInstance = Resolve(field.FieldType);
+                    if (resolvedInstance == null)
+                    {
+                        throw new Exception($"Failed to inject dependency into field '{field.Name}' of class '{type.Name}'.");
+                    }
+                    field.SetValue(instance, resolvedInstance);
                 }
-                var fieldType = injectableField.FieldType;
-                var resolvedInstance = Resolve(fieldType);
-                if (resolvedInstance == null)
+                else if (member is MethodInfo method)
                 {
-                    throw new Exception($"Failed to inject dependency into field '{injectableField.Name}' of class '{type.Name}'.");
+                    var resolvedInstances = method.GetParameters().Select(p => Resolve(p.ParameterType)).ToArray();
+                    if (resolvedInstances.Any(resolvedInstance => resolvedInstance == null))
+                    {
+                        throw new Exception($"Failed to inject dependencies into method '{method.Name}' of class '{type.Name}'.");
+                    }
+                    method.Invoke(instance, resolvedInstances);
                 }
-
-                injectableField.SetValue(instance, resolvedInstance);
-            }
-
-            // Inject into methods
-            var injectableMethods = type.GetMethods(k_bindingFlags)
-                .Where(member => Attribute.IsDefined(member, typeof(InjectAttribute)));
-
-            foreach (var injectableMethod in injectableMethods)
-            {
-                var requiredParameters = injectableMethod.GetParameters()
-                    .Select(parameter => parameter.ParameterType)
-                    .ToArray();
-                var resolvedInstances = requiredParameters.Select(Resolve).ToArray();
-                if (resolvedInstances.Any(resolvedInstance => resolvedInstance == null))
+                else if (member is PropertyInfo property)
                 {
-                    throw new Exception($"Failed to inject dependencies into method '{injectableMethod.Name}' of class '{type.Name}'.");
+                    var resolvedInstance = Resolve(property.PropertyType);
+                    if (resolvedInstance == null)
+                    {
+                        throw new Exception($"Failed to inject dependency into property '{property.Name}' of class '{type.Name}'.");
+                    }
+                    property.SetValue(instance, resolvedInstance);
                 }
-
-                injectableMethod.Invoke(instance, resolvedInstances);
-            }
-
-            // Inject into properties
-            var injectableProperties = type.GetProperties(k_bindingFlags)
-                .Where(member => Attribute.IsDefined(member, typeof(InjectAttribute)));
-            foreach (var injectableProperty in injectableProperties)
-            {
-                var propertyType = injectableProperty.PropertyType;
-                var resolvedInstance = Resolve(propertyType);
-                if (resolvedInstance == null)
-                {
-                    throw new Exception($"Failed to inject dependency into property '{injectableProperty.Name}' of class '{type.Name}'.");
-                }
-
-                injectableProperty.SetValue(instance, resolvedInstance);
             }
         }
 
@@ -206,5 +190,18 @@ namespace DependencyInjection
             var members = obj.GetType().GetMembers(k_bindingFlags);
             return members.Any(member => Attribute.IsDefined(member, typeof(InjectAttribute)));
         }
+
+        private MemberInfo[] GetInjectableMembers(Type type)
+        {
+            if (!injectableMembersCache.TryGetValue(type, out var members))
+            {
+                members = type.GetMembers(k_bindingFlags)
+                            .Where(m => Attribute.IsDefined(m, typeof(InjectAttribute)))
+                            .ToArray();
+                injectableMembersCache[type] = members;
+            }
+            return members;
+        }
+
     }
 }
