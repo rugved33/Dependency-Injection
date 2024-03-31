@@ -46,7 +46,7 @@ namespace DependencyInjection
             registry[typeof(T)] = instance;
         }
 
-        private void Inject(object instance)
+        public void Inject(object instance)
         {
             var type = instance.GetType();
             var injectableMembers = GetInjectableMembers(type);
